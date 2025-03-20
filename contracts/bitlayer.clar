@@ -191,3 +191,62 @@
         (ok true)
     )
 )
+
+(define-public (purchase-nft (token-id uint))
+    (let
+        (
+            (listing (unwrap! (get-listing token-id) err-listing-not-found))
+            (price (get price listing))
+            (seller (get seller listing))
+            (fee (/ (* price (var-get protocol-fee)) u1000))
+        )
+        (asserts! (get active listing) err-listing-not-found)
+        ;; Transfer STX from buyer to seller
+        
+        ;; Transfer STX from buyer to seller
+        (try! (stx-transfer? price tx-sender seller))
+        ;; Transfer protocol fee
+        (try! (stx-transfer? fee tx-sender (as-contract tx-sender)))
+        
+        ;; Update token ownership
+        (try! (transfer-nft token-id tx-sender))
+        
+        ;; Clear listing
+        (map-set token-listings
+            { token-id: token-id }
+            {
+                price: u0,
+                seller: seller,
+                active: false
+            }
+        )
+        (ok true)
+    )
+)
+
+;; Fractional Ownership Functions
+
+(define-public (transfer-shares (token-id uint) (recipient principal) (share-amount uint))
+    (let
+        (
+            (sender-shares (unwrap! (get-fractional-shares token-id tx-sender) err-insufficient-balance))
+            (current-recipient-shares (default-to { shares: u0 } (get-fractional-shares token-id recipient)))
+            (recipient-new-shares (unwrap! (safe-add (get shares current-recipient-shares) share-amount) err-overflow))
+        )
+        (asserts! (validate-recipient recipient) err-invalid-recipient)
+        (asserts! (>= (get shares sender-shares) share-amount) err-insufficient-balance)
+        
+        ;; Update sender's shares
+        (map-set fractional-ownership
+            { token-id: token-id, owner: tx-sender }
+            { shares: (- (get shares sender-shares) share-amount) }
+        )
+        
+        ;; Update recipient's shares
+        (map-set fractional-ownership
+            { token-id: token-id, owner: recipient }
+            { shares: recipient-new-shares }
+        )
+        (ok true)
+    )
+)
